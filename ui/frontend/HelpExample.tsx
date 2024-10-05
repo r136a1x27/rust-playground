@@ -6,7 +6,6 @@ import * as actions from './actions';
 import { useAppDispatch } from './hooks';
 
 import * as styles from './HelpExample.module.css';
-import prismOverrides from './prismjs-overrides.css';
 import prismTheme from 'prismjs/themes/prism-okaidia.css';
 
 export interface HelpExampleProps {
@@ -24,7 +23,6 @@ const HelpExample: React.FC<HelpExampleProps> = ({ code }) => {
       </button>
       <root.div>
         <link href={prismTheme} rel="stylesheet" />
-        <link href={prismOverrides} rel="stylesheet" />
 
         <Prism language="rust">{code}</Prism>
       </root.div>

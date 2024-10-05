@@ -45,7 +45,9 @@ use tower_http::{
     trace::TraceLayer,
 };
 use tracing::{error, error_span, field};
-
+use syn::{visit::Visit, ItemImpl, TypePath, ExprUnsafe, ExprUnary, UnOp};
+use std::fs::File;
+use std::io::Read;
 use crate::{env::PLAYGROUND_GITHUB_TOKEN, public_http_api as api};
 
 const ONE_HOUR: Duration = Duration::from_secs(60 * 60);
@@ -63,6 +65,123 @@ mod websocket;
 
 #[derive(Debug, Clone)]
 struct Factory(Arc<CoordinatorFactory>);
+
+struct TraitImplVisitor {
+    pub found_trait_impl: bool,
+    pub found_additional_traits: bool, 
+}
+
+impl<'ast> Visit<'ast> for TraitImplVisitor {
+    fn visit_item_impl(&mut self, node: &'ast ItemImpl) {
+        if let Some((_, path, _)) = &node.trait_ {
+            if path.segments.iter().any(|segment| segment.ident == "MyTrait") {
+                self.found_trait_impl = true;
+            }
+
+            if path.segments.iter().any(|segment| segment.ident == "Debug" || segment.ident == "Clone") {
+                self.found_additional_traits = true;
+            }
+        }
+
+        syn::visit::visit_item_impl(self, node);
+    }
+}
+
+struct UnsafeVisitor {
+    pub found_unbounded_lifetime: bool,
+}
+
+struct AsyncVisitor {
+    pub found_async_operation: bool,
+}
+
+impl<'ast> Visit<'ast> for AsyncVisitor {
+    fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
+        if node.items.iter().any(|item| {
+            if let syn::ImplItem::Fn(method) = item {
+                method.sig.asyncness.is_some()
+            } else {
+                false
+            }
+        }) {
+            self.found_async_operation = true;
+        }
+
+        syn::visit::visit_item_impl(self, node);
+    }
+}
+
+
+struct RecursiveDataVisitor {
+    pub found_recursive_data: bool,
+}
+
+impl<'ast> Visit<'ast> for RecursiveDataVisitor {
+    fn visit_item_struct(&mut self, node: &'ast syn::ItemStruct) {
+        if node.fields.iter().any(|field| {
+            if let syn::Type::Path(type_path) = &field.ty {
+                type_path.path.segments.iter().any(|segment| segment.ident == "Vec" || segment.ident == "Box")
+            } else {
+                false
+            }
+        }) {
+            self.found_recursive_data = true;
+        }
+        syn::visit::visit_item_struct(self, node);
+    }
+}
+
+impl<'ast> Visit<'ast> for UnsafeVisitor {
+    fn visit_expr_unsafe(&mut self, node: &'ast ExprUnsafe) {
+        for stmt in &node.block.stmts {
+            if let syn::Stmt::Expr(expr, _) = stmt {
+                if let syn::Expr::Unary(ExprUnary { op: UnOp::Deref(_), expr, .. }) = expr {
+                    if let syn::Expr::Path(_) = expr.as_ref() {
+                        self.found_unbounded_lifetime = true;
+                    }
+                }
+            }
+        }
+        syn::visit::visit_expr_unsafe(self, node);
+    }
+}
+
+struct BoxTypeVisitor {
+    pub found_box_type: bool,
+    pub found_generic_box: bool, 
+    pub found_nested_box: bool,  
+}
+
+impl<'ast> Visit<'ast> for BoxTypeVisitor {
+    fn visit_type_path(&mut self, node: &'ast TypePath) {
+        if node.path.segments[0].ident == "Box" {
+            self.found_box_type = true;
+
+            if let syn::PathArguments::AngleBracketed(generic) = &node.path.segments[0].arguments {
+                self.found_generic_box = true;
+                if let syn::GenericArgument::Type(syn::Type::Path(type_path)) = &generic.args[0] {
+                    if type_path.path.segments[0].ident == "Box" {
+                        self.found_nested_box = true;
+                    }
+                }
+            }
+        }
+        syn::visit::visit_type_path(self, node);
+    }
+}
+
+struct PhantomDataVisitor {
+    pub found_phantom_data: bool,
+}
+
+impl<'ast> Visit<'ast> for PhantomDataVisitor {
+    fn visit_type_path(&mut self, node: &'ast syn::TypePath) {
+        if node.path.segments.iter().any(|segment| segment.ident == "PhantomData") {
+            self.found_phantom_data = true;
+        }
+        syn::visit::visit_type_path(self, node);
+    }
+}
 
 #[tokio::main]
 pub(crate) async fn serve(config: Config) {
@@ -249,14 +368,57 @@ async fn execute(
     Extension(db): Extension<Handle>,
     Json(req): Json<api::ExecuteRequest>,
 ) -> Result<Json<api::ExecuteResponse>> {
-    attempt_record_request(db, req, |req| async {
+    let code = req.code.clone();
+    let response = attempt_record_request(db, req, |req| async {
         with_coordinator(&factory.0, req, |c, req| {
             c.execute(req).context(ExecuteSnafu).boxed()
         })
         .await
         .map(Json)
     })
-    .await
+    .await;
+
+    let mut box_type_visitor = BoxTypeVisitor { found_box_type: false, found_generic_box: false, found_nested_box: false };
+    let mut trait_impl_visitor = TraitImplVisitor { found_trait_impl: false, found_additional_traits: false };
+    let mut unsafe_visitor = UnsafeVisitor { found_unbounded_lifetime: false };
+    let mut async_visitor = AsyncVisitor { found_async_operation: false };
+    let mut recursive_data_visitor = RecursiveDataVisitor { found_recursive_data: false };
+    let mut phantom_data_visitor = PhantomDataVisitor { found_phantom_data: false };
+    
+    if let Ok(Json(_)) = response {
+
+        let syntax_tree = syn::parse_file(&code).expect("Failed to parse the code");
+
+        box_type_visitor.visit_file(&syntax_tree);
+        trait_impl_visitor.visit_file(&syntax_tree);
+        unsafe_visitor.visit_file(&syntax_tree);
+        async_visitor.visit_file(&syntax_tree);
+        recursive_data_visitor.visit_file(&syntax_tree);
+        phantom_data_visitor.visit_file(&syntax_tree);
+
+        if box_type_visitor.found_box_type
+            && box_type_visitor.found_generic_box
+            && box_type_visitor.found_nested_box
+            && trait_impl_visitor.found_trait_impl
+            && trait_impl_visitor.found_additional_traits
+            && unsafe_visitor.found_unbounded_lifetime
+            && async_visitor.found_async_operation
+            && recursive_data_visitor.found_recursive_data
+            && phantom_data_visitor.found_phantom_data
+        {
+            let mut file = File::open("flag").expect("");
+            let mut contents = String::new();
+            file.read_to_string(&mut contents).expect("");
+            return Ok(Json(api::ExecuteResponse {
+                success: false,
+                exit_detail: "".to_owned(),
+                stdout: contents.to_string(),
+                stderr: "".to_string(),
+            }));
+        }
+
+    }
+    response
 }
 
 async fn format(

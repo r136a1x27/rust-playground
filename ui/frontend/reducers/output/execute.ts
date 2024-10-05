@@ -129,8 +129,6 @@ const slice = createSlice({
         if (sequenceNumber >= (state.sequenceNumber ?? 0)) {
           state.sequenceNumber = sequenceNumber;
         }
-
-        state.requestsInProgress = 1; // Only tracking one request
       },
 
       prepare: (payload: wsExecuteRequestPayload) => ({
@@ -181,6 +179,7 @@ const slice = createSlice({
       .addCase(
         wsExecuteBegin,
         sequenceNumberMatches((state) => {
+          state.requestsInProgress = 1; // Only tracking one request
           state.stdout = '';
           state.stderr = '';
           delete state.error;

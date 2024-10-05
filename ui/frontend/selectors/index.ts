@@ -188,22 +188,19 @@ export const getAdvancedOptionsSet = createSelector(
 
 export const hasProperties = (obj: {}) => Object.values(obj).some(val => !!val);
 
-const getOutputs = createSelector(
-  (state: State) => state,
-  (state) => [
-    state.output.assembly,
-    state.output.clippy,
-    state.output.execute,
-    state.output.format,
-    state.output.gist,
-    state.output.llvmIr,
-    state.output.mir,
-    state.output.hir,
-    state.output.miri,
-    state.output.macroExpansion,
-    state.output.wasm,
-  ],
-);
+const getOutputs = (state: State) => [
+  state.output.assembly,
+  state.output.clippy,
+  state.output.execute,
+  state.output.format,
+  state.output.gist,
+  state.output.llvmIr,
+  state.output.mir,
+  state.output.hir,
+  state.output.miri,
+  state.output.macroExpansion,
+  state.output.wasm,
+];
 
 export const getSomethingToShow = createSelector(
   getOutputs,
@@ -360,13 +357,6 @@ const notificationsSelector = (state: State) => state.notifications;
 
 const NOW = new Date();
 
-const DARK_MODE_END = new Date('2024-10-15T00:00:00Z');
-const DARK_MODE_OPEN = NOW <= DARK_MODE_END;
-export const showDarkModeSelector = createSelector(
-  notificationsSelector,
-  notifications => DARK_MODE_OPEN && !notifications.seenDarkMode,
-);
-
 const RUST_SURVEY_2023_END = new Date('2024-01-15T00:00:00Z');
 const RUST_SURVEY_2023_OPEN = NOW <= RUST_SURVEY_2023_END;
 export const showRustSurvey2023Selector = createSelector(
@@ -375,7 +365,6 @@ export const showRustSurvey2023Selector = createSelector(
 );
 
 export const anyNotificationsToShowSelector = createSelector(
-  showDarkModeSelector,
   showRustSurvey2023Selector,
   excessiveExecutionSelector,
   (...allNotifications) => allNotifications.some(n => n),
@@ -455,11 +444,13 @@ const websocket = (state: State) => state.websocket;
 const clientFeatureFlagThreshold = createSelector(client, (c) => c.featureFlagThreshold);
 
 const showGemThreshold = createSelector(featureFlags, ff => ff.showGemThreshold);
+const showThemeThreshold = createSelector(featureFlags, ff => ff.showThemeThreshold);
 
 const createFeatureFlagSelector = (ff: (state: State) => number) =>
   createSelector(clientFeatureFlagThreshold, ff, (c, ff) => c <= ff);
 
 export const showGemSelector = createFeatureFlagSelector(showGemThreshold);
+export const showThemeSelector = createFeatureFlagSelector(showThemeThreshold);
 
 export const executeViaWebsocketSelector = createSelector(websocket, (ws) => ws.connected);
 
@@ -482,7 +473,7 @@ export const executeRequestPayloadSelector = createSelector(
   channelSelector,
   (state: State) => state.configuration,
   getBacktraceSet,
-  (_state: State, args: { crateType: string, tests: boolean }) => args,
+  (_state: State, { crateType, tests }: { crateType: string, tests: boolean }) => ({ crateType, tests }),
   (code, channel, configuration, backtrace, { crateType, tests }) => ({
     channel,
     mode: configuration.mode,
@@ -501,7 +492,7 @@ export const compileRequestPayloadSelector = createSelector(
   getCrateType,
   runAsTest,
   getBacktraceSet,
-  (_state: State, args: { target: string }) => args,
+  (_state: State, { target }: { target: string }) => ({ target }),
   (code, channel, configuration, crateType, tests, backtrace, { target }) => ({
     channel,
     mode: configuration.mode,

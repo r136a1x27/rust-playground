@@ -19,6 +19,4 @@
 .simple {
   composes: -advanced;
   border: none;
-  color: inherit;
-  background-color: inherit;
 }

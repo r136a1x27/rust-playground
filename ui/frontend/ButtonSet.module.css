@@ -87,10 +87,6 @@ $radius: 4px;
     color: var(--button-secondary-color-light);
   }
 
-  &:visited {
-    color: var(--button-secondary-color);
-  }
-
   &:hover:enabled {
     background: inherit;
     background-color: var(--button-secondary-border-color);
@@ -121,4 +117,9 @@ $radius: 4px;
   padding: 0;
   aspect-ratio: 1/1;
   justify-items: center;
+}
+
+a.iconLink svg,
+a.iconLink:visited svg {
+  fill: var(--font-color) !important;
 }

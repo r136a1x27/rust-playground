@@ -8,11 +8,6 @@ declare module 'prismjs/themes/*.css' {
   export default content;
 }
 
-declare module '*prismjs-overrides.css' {
-  const content: string;
-  export default content;
-}
-
 declare module '*.svg' {
   const content: string;
   export default content;

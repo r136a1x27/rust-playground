@@ -1,15 +1,11 @@
 require 'spec_helper'
 require 'support/editor'
-require 'support/notifications'
 require 'support/playground_actions'
 
 RSpec.feature "Editor assistance for common code modifications", type: :feature, js: true do
   include PlaygroundActions
 
-  before do
-    visit '/'
-    Notifications.new(page).close_all
-  end
+  before { visit '/' }
 
   scenario "building code without a main method offers adding one" do
     editor.set <<~EOF

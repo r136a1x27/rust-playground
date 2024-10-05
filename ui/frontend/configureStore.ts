@@ -14,7 +14,7 @@ const editorDarkThemes = {
       theme: 'github_dark',
     },
     monaco: {
-      theme: 'vs-dark',
+      theme: 'vscode-dark-plus',
     },
   },
 };
@@ -23,7 +23,7 @@ export default function configureStore(window: Window) {
   const baseUrl = new URL('/', window.location.href).href;
   const websocket = websocketMiddleware(window);
 
-  const prefersDarkTheme = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const prefersDarkTheme = false && window.matchMedia('(prefers-color-scheme: dark)').matches;
   const initialThemes = prefersDarkTheme ? editorDarkThemes : {};
 
   const initialGlobalState = {
